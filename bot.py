@@ -4,12 +4,15 @@
 
 import logging
 import random
+import json
+from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────
 import os
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+USERS_FILE = Path("/data/users.json") if Path("/data").exists() else Path("users.json")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -31,11 +34,41 @@ WORDS = [
 ]
 
 
+# ─── УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ─────────────────────────────────
+def load_users():
+    """Загружает список пользователей из файла"""
+    if USERS_FILE.exists():
+        with open(USERS_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_users(users):
+    """Сохраняет список пользователей в файл"""
+    with open(USERS_FILE, 'w') as f:
+        json.dump(users, f)
+
+def add_user(user_id, username, first_name):
+    """Добавляет пользователя в список"""
+    users = load_users()
+    users[str(user_id)] = {
+        "username": username,
+        "first_name": first_name
+    }
+    save_users(users)
+
+def get_all_users():
+    """Возвращает всех пользователей"""
+    return load_users()
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Приветственное сообщение"""
+    """Приветственное сообщение и регистрация пользователя"""
+    user = update.effective_user
+    add_user(user.id, user.username, user.first_name)
+    
     await update.message.reply_text(
         "🦎 *Chameleon Game Bot*\n\n"
-        "Добавь меня в группу и используй команду /newgame чтобы начать игру!",
+        "Ты зарегистрирован! Теперь добавь меня в группу и используй команду /newgame чтобы начать игру.",
         parse_mode="Markdown"
     )
 
@@ -49,21 +82,30 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Эта команда работает только в группах!")
         return
     
-    # Получаем список участников группы
+    # Получаем список зарегистрированных пользователей
     try:
-        chat_id = update.effective_chat.id
-        members = []
+        users_dict = get_all_users()
         
-        # Получаем администраторов
-        admins = await context.bot.get_chat_administrators(chat_id)
-        for admin in admins:
-            if admin.user.id != context.bot.id:
-                members.append(admin.user)
+        if not users_dict:
+            await update.message.reply_text(
+                "❌ Никто еще не зарегистрировался! Напишите мне в личку /start"
+            )
+            return
+        
+        # Преобразуем в список объектов пользователей
+        from types import SimpleNamespace
+        members = []
+        for user_id, user_data in users_dict.items():
+            user = SimpleNamespace()
+            user.id = int(user_id)
+            user.username = user_data.get("username")
+            user.first_name = user_data.get("first_name")
+            members.append(user)
         
         # Если участников меньше 3, игра не имеет смысла
         if len(members) < 3:
             await update.message.reply_text(
-                "❌ Нужно минимум 3 участника для игры!"
+                "❌ Нужно минимум 3 зарегистрированных участника для игры! Напишите мне в личку /start"
             )
             return
         
@@ -74,6 +116,7 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chameleon = random.choice(members)
         
         # Отправляем сообщения каждому участнику
+        sent_count = 0
         for member in members:
             try:
                 if member.id == chameleon.id:
@@ -91,13 +134,15 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
                              "Найди хамелеона среди участников!",
                         parse_mode="Markdown"
                     )
+                sent_count += 1
             except Exception as e:
                 logger.warning(f"Не удалось отправить сообщение пользователю {member.id}: {e}")
         
         # Сообщение в группе
         await update.message.reply_text(
             f"🎮 *Игра началась!*\n\n"
-            f"Проверьте личные сообщения - я отправил каждому слово.\n"
+            f"Отправил слова {sent_count} зарегистрированным игрокам.\n"
+            f"Проверьте личные сообщения!\n"
             f"Один из вас - хамелеон! Найдите его!",
             parse_mode="Markdown"
         )
@@ -105,7 +150,7 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Ошибка при запуске игры: {e}")
         await update.message.reply_text(
-            "❌ Произошла ошибка. Убедитесь, что я могу писать личные сообщения участникам."
+            "❌ Произошла ошибка. Убедитесь, что пользователи написали мне в личку /start"
         )
 
 
