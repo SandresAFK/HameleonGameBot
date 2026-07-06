@@ -130,8 +130,7 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # Остальные получают слово
                     await context.bot.send_message(
                         chat_id=member.id,
-                        text=f"🎯 *Твое слово: {word}*\n\n"
-                             "Найди хамелеона среди участников!",
+                        text=f"Секретное слово: {word}. Найди хамелеона!",
                         parse_mode="Markdown"
                     )
                 sent_count += 1
@@ -162,6 +161,7 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("newgame", newgame))
+    app.add_handler(CommandHandler("cnewgame", newgame))
     
     print("🦎 Chameleon Game Bot запущен! Ctrl+C для остановки.")
     app.run_polling()
