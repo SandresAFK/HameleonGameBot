@@ -123,14 +123,14 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # Хамелеон получает особое сообщение
                     await context.bot.send_message(
                         chat_id=member.id,
-                        text="🦎 *Ты хамелеон!*\n\nШифруйся. Не дай себя раскусить!",
+                        text=" *Ты хамелеон!* 🦎\n\n👀 Шифруйся. Не дай себя раскусить!",
                         parse_mode="Markdown"
                     )
                 else:
                     # Остальные получают слово
                     await context.bot.send_message(
                         chat_id=member.id,
-                        text=f"Секретное слово: {word}. Найди хамелеона!",
+                        text=f"Секретное слово: {word} 🤫\n\n🕵️ Найди хамелеона!",
                         parse_mode="Markdown"
                     )
                 sent_count += 1
