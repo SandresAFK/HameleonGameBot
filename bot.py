@@ -429,10 +429,10 @@ def main():
     # Debug callback handler - должен быть первым для логирования всех callback
     app.add_handler(CallbackQueryHandler(debug_callback))
     
-    # Callback handlers for voting
-    app.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote:\d+$"))
-    app.add_handler(CallbackQueryHandler(vote_for_callback, pattern=r"^vote_for:\d+:\d+$"))
-    app.add_handler(CallbackQueryHandler(cancel_vote_callback, pattern=r"^cancel_vote:\d+$"))
+    # Callback handlers for voting (поддержка отрицательных chat_id для групп)
+    app.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote:-?\d+$"))
+    app.add_handler(CallbackQueryHandler(vote_for_callback, pattern=r"^vote_for:-?\d+:\d+$"))
+    app.add_handler(CallbackQueryHandler(cancel_vote_callback, pattern=r"^cancel_vote:-?\d+$"))
     
     print("🦎 Chameleon Game Bot запущен! Ctrl+C для остановки.")
     app.run_polling()
