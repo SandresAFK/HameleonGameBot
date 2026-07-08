@@ -297,6 +297,15 @@ async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("❌ Произошла ошибка", show_alert=True)
 
 
+async def debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отладочный callback handler для всех запросов"""
+    query = update.callback_query
+    logger.info(f"DEBUG: Callback received - data: {query.data}, from: {query.from_user.id}")
+    
+    # Позволяем другим handler'ам обработать
+    return
+
+
 async def vote_for_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка голоса за конкретного игрока"""
     query = update.callback_query
@@ -416,6 +425,9 @@ def main():
     app.add_handler(CommandHandler("scores", scores))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("cnewgame", newgame))
+    
+    # Debug callback handler - должен быть первым для логирования всех callback
+    app.add_handler(CallbackQueryHandler(debug_callback))
     
     # Callback handlers for voting
     app.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote:\d+$"))
