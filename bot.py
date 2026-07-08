@@ -316,8 +316,9 @@ async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         users = load_users()
         members = game["members"]
+        votes = game.get("votes", {})
         
-        # Создаем клавиатуру с кандидатами
+        # Создаем клавиатуру с кандидатами и количеством голосов
         keyboard = []
         for member_id in members:
             user_data = users.get(str(member_id), {})
@@ -325,7 +326,12 @@ async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             username = user_data.get("username")
             if username:
                 name = f"@{username}"
-            keyboard.append([InlineKeyboardButton(name, callback_data=f"vote_for:{chat_id}:{member_id}")])
+            
+            # Подсчитываем голоса за этого кандидата
+            vote_count = sum(1 for v in votes.values() if v == member_id)
+            button_text = f"{name} ({vote_count})" if vote_count > 0 else name
+            
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"vote_for:{chat_id}:{member_id}")])
         
         keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data=f"cancel_vote:{chat_id}")])
         
@@ -370,7 +376,28 @@ async def vote_for_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     games[str(chat_id)] = game
     save_games(games)
     
-    await query.answer(f"✅ Вы проголосовали! (всего голосов: {len(game['votes'])})")
+    # Обновляем клавиатуру с количеством голосов
+    users = load_users()
+    members = game["members"]
+    votes = game["votes"]
+    
+    keyboard = []
+    for member_id in members:
+        user_data = users.get(str(member_id), {})
+        name = user_data.get("first_name", f"User {member_id}")
+        username = user_data.get("username")
+        if username:
+            name = f"@{username}"
+        
+        # Подсчитываем голоса за этого кандидата
+        vote_count = sum(1 for v in votes.values() if v == member_id)
+        button_text = f"{name} ({vote_count})" if vote_count > 0 else name
+        
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"vote_for:{chat_id}:{member_id}")])
+    
+    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data=f"cancel_vote:{chat_id}")])
+    
+    await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
     
     # Если большинство проголосовало, подводим итоги
     if len(game["votes"]) > len(game["members"]) / 2:
