@@ -126,6 +126,26 @@ def delete_game(chat_id):
         save_games(games)
 
 
+def get_vote_winner(votes, members):
+    vote_counts = {}
+    for voted_for_id in votes.values():
+        vote_counts[voted_for_id] = vote_counts.get(voted_for_id, 0) + 1
+
+    if not vote_counts:
+        return None, vote_counts
+
+    max_votes = max(vote_counts.values())
+    leaders = [member_id for member_id, count in vote_counts.items() if count == max_votes]
+
+    if len(leaders) != 1:
+        return None, vote_counts
+
+    if max_votes <= len(members) / 2:
+        return None, vote_counts
+
+    return leaders[0], vote_counts
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Приветственное сообщение и регистрация пользователя"""
     user = update.effective_user
@@ -399,9 +419,15 @@ async def vote_for_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
     
-    # Если большинство проголосовало, подводим итоги
-    if len(game["votes"]) > len(game["members"]) / 2:
+    # Если один кандидат набрал большинство, подводим итоги
+    suspected_id, vote_counts = get_vote_winner(game["votes"], game["members"])
+    if suspected_id is not None:
         await finish_game(update, context, chat_id, game)
+    elif len(game["votes"]) == len(game["members"]) and vote_counts:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="🗳️ Ничья в голосовании. Переголосуйте: нужен один кандидат с большинством голосов."
+        )
 
 
 async def cancel_vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -426,13 +452,14 @@ async def finish_game(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_i
     members = game["members"]
     users = load_users()
     
-    # Подсчитываем голоса
-    vote_counts = {}
-    for voter_id, voted_for_id in votes.items():
-        vote_counts[voted_for_id] = vote_counts.get(voted_for_id, 0) + 1
-    
     # Находим кого подозревают больше всего
-    suspected_id = max(vote_counts.items(), key=lambda x: x[1])[0] if vote_counts else None
+    suspected_id, vote_counts = get_vote_winner(votes, members)
+    if suspected_id is None:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="🗳️ Ничья в голосовании. Переголосуйте: нужен один кандидат с большинством голосов."
+        )
+        return
     
     # Определяем результат
     chameleon_caught = (suspected_id == chameleon_id)
