@@ -372,8 +372,8 @@ async def vote_for_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.answer(f"✅ Вы проголосовали! (всего голосов: {len(game['votes'])})")
     
-    # Если все проголосовали, подводим итоги
-    if len(game["votes"]) >= len(game["members"]):
+    # Если большинство проголосовало, подводим итоги
+    if len(game["votes"]) > len(game["members"]) / 2:
         await finish_game(update, context, chat_id, game)
 
 
