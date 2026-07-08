@@ -163,6 +163,48 @@ async def scores(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Удаляет пользователя из системы"""
+    if not context.args:
+        await update.message.reply_text("Использование: /remove @username или /remove user_id")
+        return
+    
+    target = context.args[0]
+    users = load_users()
+    scores = load_scores()
+    
+    # Если указан username
+    if target.startswith("@"):
+        target = target[1:]
+        user_id_to_remove = None
+        for user_id_str, user_data in users.items():
+            if user_data.get("username") == target:
+                user_id_to_remove = user_id_str
+                break
+        
+        if not user_id_to_remove:
+            await update.message.reply_text(f"❌ Пользователь @{target} не найден")
+            return
+    else:
+        # Если указан user_id
+        user_id_to_remove = target
+        if user_id_to_remove not in users:
+            await update.message.reply_text(f"❌ Пользователь с ID {target} не найден")
+            return
+    
+    # Удаляем пользователя
+    user_name = users[user_id_to_remove].get("first_name", users[user_id_to_remove].get("username", f"User {user_id_to_remove}"))
+    del users[user_id_to_remove]
+    save_users(users)
+    
+    # Удаляем очки
+    if user_id_to_remove in scores:
+        del scores[user_id_to_remove]
+        save_scores(scores)
+    
+    await update.message.reply_text(f"✅ Пользователь {user_name} удален из системы")
+
+
 async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начинает новую игру в группе"""
     if not update.effective_chat:
@@ -414,6 +456,7 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("scores", scores))
+    app.add_handler(CommandHandler("remove", remove_user))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("cnewgame", newgame))
     
