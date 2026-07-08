@@ -260,35 +260,41 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка нажатия на кнопку голосования"""
     query = update.callback_query
-    await query.answer()
+    logger.info(f"Vote callback received: {query.data}")
     
-    chat_id = int(query.data.split(":")[1])
-    game = get_game(chat_id)
-    
-    if not game:
-        await query.edit_message_text("❌ Игра не найдена или уже закончена")
-        return
-    
-    users = load_users()
-    members = game["members"]
-    
-    # Создаем клавиатуру с кандидатами
-    keyboard = []
-    for member_id in members:
-        user_data = users.get(str(member_id), {})
-        name = user_data.get("first_name", f"User {member_id}")
-        username = user_data.get("username")
-        if username:
-            name = f"@{username}"
-        keyboard.append([InlineKeyboardButton(name, callback_data=f"vote_for:{chat_id}:{member_id}")])
-    
-    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data=f"cancel_vote:{chat_id}")])
-    
-    await query.edit_message_text(
-        "🗳️ *Кто хамелеон?*\n\nГолосуйте за подозреваемого:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    try:
+        await query.answer()
+        
+        chat_id = int(query.data.split(":")[1])
+        game = get_game(chat_id)
+        
+        if not game:
+            await query.edit_message_text("❌ Игра не найдена или уже закончена")
+            return
+        
+        users = load_users()
+        members = game["members"]
+        
+        # Создаем клавиатуру с кандидатами
+        keyboard = []
+        for member_id in members:
+            user_data = users.get(str(member_id), {})
+            name = user_data.get("first_name", f"User {member_id}")
+            username = user_data.get("username")
+            if username:
+                name = f"@{username}"
+            keyboard.append([InlineKeyboardButton(name, callback_data=f"vote_for:{chat_id}:{member_id}")])
+        
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data=f"cancel_vote:{chat_id}")])
+        
+        await query.edit_message_text(
+            "🗳️ *Кто хамелеон?*\n\nГолосуйте за подозреваемого:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    except Exception as e:
+        logger.error(f"Error in vote_callback: {e}")
+        await query.answer("❌ Произошла ошибка", show_alert=True)
 
 
 async def vote_for_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
