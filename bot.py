@@ -158,6 +158,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает список команд бота"""
+    await update.message.reply_text(
+        "🦎 *Chameleon Game Bot*\n\n"
+        "*Команды:*\n"
+        "/start — зарегистрироваться в боте\n"
+        "/help — показать эту подсказку\n"
+        "/newgame — начать новую игру в группе\n"
+        "/cnewgame — начать новую игру, короткая команда\n"
+        "/scores — показать таблицу лидеров\n"
+        "/remove @username — удалить игрока из системы\n\n"
+        "*Как играть:*\n"
+        "1. Каждый игрок пишет боту в личку /start.\n"
+        "2. В группе запускаете /newgame.\n"
+        "3. Бот отправляет слово всем, кроме хамелеона.\n"
+        "4. После обсуждения нажимаете кнопку голосования.",
+        parse_mode="Markdown"
+    )
+
+
 async def scores(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает таблицу лидеров"""
     scores = load_scores()
@@ -509,6 +529,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("scores", scores))
     app.add_handler(CommandHandler("remove", remove_user))
     app.add_handler(CommandHandler("newgame", newgame))
