@@ -6,7 +6,7 @@ import logging
 import random
 import json
 from pathlib import Path
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────
@@ -168,6 +168,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/newgame — начать новую игру в группе\n"
         "/cnewgame — начать новую игру, короткая команда\n"
         "/scores — показать таблицу лидеров\n"
+        "/players — показать всех зарегистрированных игроков\n"
         "/remove @username — удалить игрока из системы\n\n"
         "*Как играть:*\n"
         "1. Каждый игрок пишет боту в личку /start.\n"
@@ -200,6 +201,28 @@ async def scores(update: Update, context: ContextTypes.DEFAULT_TYPE):
         medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"{i + 1}."
         lines.append(f"{medal} {name} — *{score}* очков")
     
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает всех зарегистрированных игроков"""
+    users = load_users()
+    scores = load_scores()
+    
+    if not users:
+        await update.message.reply_text("👥 Пока нет зарегистрированных игроков! Напишите мне в личку /start")
+        return
+    
+    lines = ["👥 *Зарегистрированные игроки*\n"]
+    for user_id_str, user_data in users.items():
+        name = user_data.get("first_name", f"User {user_id_str}")
+        username = user_data.get("username")
+        if username:
+            name = f"@{username}"
+        score = scores.get(user_id_str, 0)
+        lines.append(f"• {name} — *{score}* очков")
+    
+    lines.append(f"\nВсего игроков: {len(users)}")
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
@@ -522,6 +545,20 @@ async def finish_game(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_i
         logger.error(f"Ошибка при отправке результата: {e}")
 
 
+async def setup_commands(app):
+    """Настраивает команды бота для подсказок"""
+    commands = [
+        BotCommand("start", "Зарегистрироваться в боте"),
+        BotCommand("help", "Показать справку"),
+        BotCommand("newgame", "Начать новую игру"),
+        BotCommand("cnewgame", "Начать игру (коротко)"),
+        BotCommand("scores", "Таблица лидеров"),
+        BotCommand("players", "Список игроков"),
+        BotCommand("remove", "Удалить игрока"),
+    ]
+    await app.bot.set_my_commands(commands)
+
+
 def main():
     if not BOT_TOKEN:
         raise RuntimeError("Не задан BOT_TOKEN. Установи переменную окружения BOT_TOKEN и перезапусти бота.")
@@ -531,6 +568,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("scores", scores))
+    app.add_handler(CommandHandler("players", players))
     app.add_handler(CommandHandler("remove", remove_user))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("cnewgame", newgame))
@@ -539,6 +577,10 @@ def main():
     app.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote:-?\d+$"))
     app.add_handler(CallbackQueryHandler(vote_for_callback, pattern=r"^vote_for:-?\d+:\d+$"))
     app.add_handler(CallbackQueryHandler(cancel_vote_callback, pattern=r"^cancel_vote:-?\d+$"))
+    
+    # Настраиваем команды при запуске
+    import asyncio
+    asyncio.run(setup_commands(app))
     
     print("🦎 Chameleon Game Bot запущен! Ctrl+C для остановки.")
     app.run_polling()
