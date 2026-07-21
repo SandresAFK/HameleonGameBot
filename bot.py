@@ -563,7 +563,10 @@ def main():
     if not BOT_TOKEN:
         raise RuntimeError("Не задан BOT_TOKEN. Установи переменную окружения BOT_TOKEN и перезапусти бота.")
     
-    app = Application.builder().token(BOT_TOKEN).build()
+    async def post_init(app):
+        await setup_commands(app)
+
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
