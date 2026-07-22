@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.error import RetryAfter
 
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────
 import os
@@ -556,7 +557,10 @@ async def setup_commands(app):
         BotCommand("players", "Список игроков"),
         BotCommand("remove", "Удалить игрока"),
     ]
-    await app.bot.set_my_commands(commands)
+    try:
+        await app.bot.set_my_commands(commands)
+    except RetryAfter as e:
+        logging.warning(f"Flood control при установке команд: {e.retry_after} сек. Пропускаем.")
 
 
 def main():
