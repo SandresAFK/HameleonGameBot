@@ -114,6 +114,17 @@ def save_game(chat_id, chameleon_id, word, members):
     }
     save_games(games)
 
+
+def create_preparation_game(chat_id):
+    """Создает игру в режиме подготовки"""
+    games = load_games()
+    games[str(chat_id)] = {
+        "preparing": True,
+        "joined_players": [],
+        "message_id": None
+    }
+    save_games(games)
+
 def get_game(chat_id):
     """Возвращает информацию об активной игре"""
     games = load_games()
@@ -228,7 +239,7 @@ async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Исключает игрока из текущей игры"""
+    """Исключает игрока из текущей игры или из режима подготовки"""
     if not update.effective_chat:
         return
     
@@ -274,7 +285,58 @@ async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Пользователь с ID {target} не найден")
             return
     
-    # Проверяем, участвует ли игрок в текущей игре
+    # Режим подготовки
+    if game.get("preparing"):
+        if user_id_to_remove not in game["joined_players"]:
+            await update.message.reply_text("❌ Игрок не присоединился к игре")
+            return
+        
+        # Удаляем из присоединившихся
+        game["joined_players"].remove(user_id_to_remove)
+        
+        # Сохраняем изменения
+        games = load_games()
+        games[str(chat_id)] = game
+        save_games(games)
+        
+        user_name = users[str(user_id_to_remove)].get("first_name", users[str(user_id_to_remove)].get("username", f"User {user_id_to_remove}"))
+        await update.message.reply_text(f"✅ {user_name} исключен из игры")
+        
+        # Обновляем сообщение с кнопками если есть message_id
+        if game.get("message_id"):
+            try:
+                users_data = load_users()
+                player_names = []
+                for pid in game["joined_players"]:
+                    u = users_data.get(str(pid), {})
+                    name = u.get("first_name", u.get("username", f"User {pid}"))
+                    player_names.append(name)
+                
+                text = f"🎮 *Новая игра!*\n\n"
+                text += f"Присоединившиеся ({len(game['joined_players'])}):\n"
+                for name in player_names:
+                    text += f"• {name}\n"
+                
+                # Кнопки
+                buttons = [[InlineKeyboardButton("✅ Присоединиться", callback_data=f"join:{chat_id}")]]
+                if len(game["joined_players"]) >= 3:
+                    buttons.append([InlineKeyboardButton("🚀 Начать игру", callback_data=f"start:{chat_id}")])
+                
+                keyboard = InlineKeyboardMarkup(buttons)
+                
+                await context.bot.edit_message_text(
+                    text,
+                    chat_id=chat_id,
+                    message_id=game["message_id"],
+                    parse_mode="Markdown",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось обновить сообщение: {e}")
+        
+        return
+    
+    # Активная игра
     if user_id_to_remove not in game["members"]:
         await update.message.reply_text("❌ Игрок не участвует в текущей игре")
         return
@@ -321,8 +383,54 @@ async def stopgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Игра остановлена")
 
 
+async def current_players(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает список присоединившихся игроков"""
+    if not update.effective_chat:
+        return
+    
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("Эта команда работает только в группах!")
+        return
+    
+    chat_id = update.effective_chat.id
+    game = get_game(chat_id)
+    
+    if not game:
+        await update.message.reply_text("❌ Нет активной игры. Используйте /newgame для создания.")
+        return
+    
+    if game.get("preparing"):
+        # Режим подготовки
+        joined_players = game.get("joined_players", [])
+        if not joined_players:
+            await update.message.reply_text("🎮 Игра в режиме подготовки\n\nНикто еще не присоединился.")
+            return
+        
+        users_data = load_users()
+        lines = ["🎮 Присоединившиеся игроки:\n"]
+        for pid in joined_players:
+            u = users_data.get(str(pid), {})
+            name = u.get("first_name", u.get("username", f"User {pid}"))
+            lines.append(f"• {name}")
+        
+        lines.append(f"\nВсего: {len(joined_players)}")
+        await update.message.reply_text("\n".join(lines))
+    else:
+        # Игра уже началась
+        members = game.get("members", [])
+        users_data = load_users()
+        lines = ["🎮 Участники текущей игры:\n"]
+        for pid in members:
+            u = users_data.get(str(pid), {})
+            name = u.get("first_name", u.get("username", f"User {pid}"))
+            lines.append(f"• {name}")
+        
+        lines.append(f"\nВсего: {len(members)}")
+        await update.message.reply_text("\n".join(lines))
+
+
 async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начинает новую игру в группе"""
+    """Начинает новую игру в группе (режим подготовки)"""
     if not update.effective_chat:
         return
     
@@ -337,32 +445,131 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Игра уже идет! Сначала закончите текущую.")
         return
     
-    # Получаем список зарегистрированных пользователей
+    # Проверяем, есть ли зарегистрированные пользователи
+    users_dict = get_all_users()
+    if not users_dict:
+        await update.message.reply_text(
+            "❌ Никто еще не зарегистрировался! Напишите мне в личку /start"
+        )
+        return
+    
+    # Создаем игру в режиме подготовки
+    create_preparation_game(chat_id)
+    
+    # Отправляем сообщение с кнопкой присоединения
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Присоединиться", callback_data=f"join:{chat_id}")]
+    ])
+    message = await update.message.reply_text(
+        "🎮 *Новая игра!*\n\n"
+        "Нажмите кнопку, чтобы присоединиться к игре.\n"
+        "Когда присоединятся минимум 3 игрока, появится кнопка 'Начать игру'.",
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
+    
+    # Сохраняем message_id для обновления
+    game = get_game(chat_id)
+    game["message_id"] = message.message_id
+    games = load_games()
+    games[str(chat_id)] = game
+    save_games(games)
+
+
+async def join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка нажатия на кнопку Присоединиться"""
+    query = update.callback_query
+    logger.info(f"Join callback received: {query.data}")
+    
     try:
-        users_dict = get_all_users()
+        await query.answer()
         
-        if not users_dict:
-            await update.message.reply_text(
-                "❌ Никто еще не зарегистрировался! Напишите мне в личку /start"
-            )
+        chat_id = int(query.data.split(":")[1])
+        game = get_game(chat_id)
+        
+        if not game or not game.get("preparing"):
+            await query.edit_message_text("❌ Игра не найдена или уже началась")
             return
         
-        # Преобразуем в список объектов пользователей
+        user_id = query.from_user.id
+        
+        # Проверяем, зарегистрирован ли пользователь
+        users = load_users()
+        if str(user_id) not in users:
+            await query.answer("❌ Сначала зарегистрируйтесь через /start в личку бота", show_alert=True)
+            return
+        
+        # Проверяем, не присоединился ли уже
+        if user_id in game["joined_players"]:
+            await query.answer("❌ Вы уже присоединились!", show_alert=True)
+            return
+        
+        # Добавляем игрока
+        game["joined_players"].append(user_id)
+        
+        # Сохраняем
+        games = load_games()
+        games[str(chat_id)] = game
+        save_games(games)
+        
+        # Обновляем сообщение
+        users_data = load_users()
+        player_names = []
+        for pid in game["joined_players"]:
+            u = users_data.get(str(pid), {})
+            name = u.get("first_name", u.get("username", f"User {pid}"))
+            player_names.append(name)
+        
+        text = f"🎮 *Новая игра!*\n\n"
+        text += f"Присоединившиеся ({len(game['joined_players'])}):\n"
+        for name in player_names:
+            text += f"• {name}\n"
+        
+        # Кнопки
+        buttons = [[InlineKeyboardButton("✅ Присоединиться", callback_data=f"join:{chat_id}")]]
+        if len(game["joined_players"]) >= 3:
+            buttons.append([InlineKeyboardButton("🚀 Начать игру", callback_data=f"start:{chat_id}")])
+        
+        keyboard = InlineKeyboardMarkup(buttons)
+        
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в join_callback: {e}")
+
+
+async def start_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка нажатия на кнопку Начать игру"""
+    query = update.callback_query
+    logger.info(f"Start game callback received: {query.data}")
+    
+    try:
+        await query.answer()
+        
+        chat_id = int(query.data.split(":")[1])
+        game = get_game(chat_id)
+        
+        if not game or not game.get("preparing"):
+            await query.edit_message_text("❌ Игра не найдена или уже началась")
+            return
+        
+        joined_players = game["joined_players"]
+        
+        if len(joined_players) < 3:
+            await query.answer("❌ Нужно минимум 3 игрока!", show_alert=True)
+            return
+        
+        # Получаем данные игроков
+        users_data = load_users()
         from types import SimpleNamespace
         members = []
-        for user_id, user_data in users_dict.items():
+        for pid in joined_players:
+            u = users_data.get(str(pid), {})
             user = SimpleNamespace()
-            user.id = int(user_id)
-            user.username = user_data.get("username")
-            user.first_name = user_data.get("first_name")
+            user.id = pid
+            user.username = u.get("username")
+            user.first_name = u.get("first_name")
             members.append(user)
-        
-        # Если участников меньше 3, игра не имеет смысла
-        if len(members) < 3:
-            await update.message.reply_text(
-                "❌ Нужно минимум 3 зарегистрированных участника для игры! Напишите мне в личку /start"
-            )
-            return
         
         # Выбираем случайное слово
         word = random.choice(WORDS)
@@ -370,7 +577,8 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Выбираем хамелеона
         chameleon = random.choice(members)
         
-        # Сохраняем игру
+        # Удаляем игру подготовки и создаем реальную игру
+        delete_game(chat_id)
         save_game(chat_id, chameleon.id, word, members)
         
         # Отправляем сообщения каждому участнику
@@ -395,13 +603,13 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.warning(f"Не удалось отправить сообщение пользователю {member.id}: {e}")
         
-        # Сообщение в группе с кнопкой голосования
+        # Обновляем сообщение в группе
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🗳️ Голосовать", callback_data=f"vote:{chat_id}")]
         ])
-        await update.message.reply_text(
+        await query.edit_message_text(
             f"🎮 *Игра началась!*\n\n"
-            f"Отправил слова {sent_count} зарегистрированным игрокам.\n"
+            f"Отправил слова {sent_count} игрокам.\n"
             f"Проверьте личные сообщения!\n"
             f"Один из вас - хамелеон! Найдите его!",
             parse_mode="Markdown",
@@ -409,10 +617,7 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
-        logger.error(f"Ошибка при запуске игры: {e}")
-        await update.message.reply_text(
-            "❌ Произошла ошибка. Убедитесь, что пользователи написали мне в личку /start"
-        )
+        logger.error(f"Ошибка в start_game_callback: {e}")
 
 
 async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -607,6 +812,7 @@ async def setup_commands(app):
         BotCommand("cnewgame", "Начать игру (коротко)"),
         BotCommand("stopgame", "Остановить игру"),
         BotCommand("kick", "Исключить игрока из игры"),
+        BotCommand("current_players", "Показать участников игры"),
         BotCommand("scores", "Таблица лидеров"),
         BotCommand("players", "Список игроков"),
     ]
@@ -631,8 +837,13 @@ def main():
     app.add_handler(CommandHandler("players", players))
     app.add_handler(CommandHandler("kick", kick_user))
     app.add_handler(CommandHandler("stopgame", stopgame))
+    app.add_handler(CommandHandler("current_players", current_players))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("cnewgame", newgame))
+    
+    # Callback handlers for game preparation
+    app.add_handler(CallbackQueryHandler(join_callback, pattern=r"^join:-?\d+$"))
+    app.add_handler(CallbackQueryHandler(start_game_callback, pattern=r"^start:-?\d+$"))
     
     # Callback handlers for voting (поддержка отрицательных chat_id для групп)
     app.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote:-?\d+$"))
