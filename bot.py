@@ -192,7 +192,7 @@ async def scores(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Сортируем по очкам
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     
-    lines = ["🏆 *Таблица лидеров*\n"]
+    lines = ["🏆 Таблица лидеров\n"]
     for i, (user_id_str, score) in enumerate(sorted_scores[:10]):
         user_data = users.get(user_id_str, {})
         name = user_data.get("first_name", f"User {user_id_str}")
@@ -200,9 +200,9 @@ async def scores(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if username:
             name = f"@{username}"
         medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"{i + 1}."
-        lines.append(f"{medal} {name} — *{score}* очков")
+        lines.append(f"{medal} {name} — {score} очков")
     
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.message.reply_text("\n".join(lines))
 
 
 async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -214,17 +214,17 @@ async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("👥 Пока нет зарегистрированных игроков! Напишите мне в личку /start")
         return
     
-    lines = ["👥 *Зарегистрированные игроки*\n"]
+    lines = ["👥 Зарегистрированные игроки\n"]
     for user_id_str, user_data in users.items():
         name = user_data.get("first_name", f"User {user_id_str}")
         username = user_data.get("username")
         if username:
             name = f"@{username}"
         score = scores.get(user_id_str, 0)
-        lines.append(f"• {name} — *{score}* очков")
+        lines.append(f"• {name} — {score} очков")
     
     lines.append(f"\nВсего игроков: {len(users)}")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.message.reply_text("\n".join(lines))
 
 
 async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -267,6 +267,25 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_scores(scores)
     
     await update.message.reply_text(f"✅ Пользователь {user_name} удален из системы")
+
+
+async def stopgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Останавливает текущую игру в группе"""
+    if not update.effective_chat:
+        return
+    
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("Эта команда работает только в группах!")
+        return
+    
+    chat_id = update.effective_chat.id
+    
+    if not get_game(chat_id):
+        await update.message.reply_text("❌ Нет активной игры")
+        return
+    
+    delete_game(chat_id)
+    await update.message.reply_text("✅ Игра остановлена")
 
 
 async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -553,6 +572,7 @@ async def setup_commands(app):
         BotCommand("help", "Показать справку"),
         BotCommand("newgame", "Начать новую игру"),
         BotCommand("cnewgame", "Начать игру (коротко)"),
+        BotCommand("stopgame", "Остановить игру"),
         BotCommand("scores", "Таблица лидеров"),
         BotCommand("players", "Список игроков"),
         BotCommand("remove", "Удалить игрока"),
@@ -577,6 +597,7 @@ def main():
     app.add_handler(CommandHandler("scores", scores))
     app.add_handler(CommandHandler("players", players))
     app.add_handler(CommandHandler("remove", remove_user))
+    app.add_handler(CommandHandler("stopgame", stopgame))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("cnewgame", newgame))
     
