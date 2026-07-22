@@ -584,11 +584,7 @@ def main():
     app.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote:-?\d+$"))
     app.add_handler(CallbackQueryHandler(vote_for_callback, pattern=r"^vote_for:-?\d+:\d+$"))
     app.add_handler(CallbackQueryHandler(cancel_vote_callback, pattern=r"^cancel_vote:-?\d+$"))
-    
-    # Настраиваем команды при запуске
-    import asyncio
-    asyncio.run(setup_commands(app))
-    
+
     print("🦎 Chameleon Game Bot запущен! Ctrl+C для остановки.")
     app.run_polling()
 
