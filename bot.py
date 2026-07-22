@@ -227,15 +227,28 @@ async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
-async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Удаляет пользователя из системы"""
+async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Исключает игрока из текущей игры"""
+    if not update.effective_chat:
+        return
+    
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("Эта команда работает только в группах!")
+        return
+    
     if not context.args:
-        await update.message.reply_text("Использование: /remove @username или /remove user_id")
+        await update.message.reply_text("Использование: /kick @username или /kick user_id")
+        return
+    
+    chat_id = update.effective_chat.id
+    game = get_game(chat_id)
+    
+    if not game:
+        await update.message.reply_text("❌ Нет активной игры")
         return
     
     target = context.args[0]
     users = load_users()
-    scores = load_scores()
     
     # Если указан username
     if target.startswith("@"):
@@ -243,7 +256,7 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id_to_remove = None
         for user_id_str, user_data in users.items():
             if user_data.get("username") == target:
-                user_id_to_remove = user_id_str
+                user_id_to_remove = int(user_id_str)
                 break
         
         if not user_id_to_remove:
@@ -251,22 +264,42 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     else:
         # Если указан user_id
-        user_id_to_remove = target
-        if user_id_to_remove not in users:
+        try:
+            user_id_to_remove = int(target)
+        except ValueError:
+            await update.message.reply_text(f"❌ Неверный ID: {target}")
+            return
+        
+        if str(user_id_to_remove) not in users:
             await update.message.reply_text(f"❌ Пользователь с ID {target} не найден")
             return
     
-    # Удаляем пользователя
-    user_name = users[user_id_to_remove].get("first_name", users[user_id_to_remove].get("username", f"User {user_id_to_remove}"))
-    del users[user_id_to_remove]
-    save_users(users)
+    # Проверяем, участвует ли игрок в текущей игре
+    if user_id_to_remove not in game["members"]:
+        await update.message.reply_text("❌ Игрок не участвует в текущей игре")
+        return
     
-    # Удаляем очки
-    if user_id_to_remove in scores:
-        del scores[user_id_to_remove]
-        save_scores(scores)
+    # Удаляем из участников игры
+    game["members"].remove(user_id_to_remove)
     
-    await update.message.reply_text(f"✅ Пользователь {user_name} удален из системы")
+    # Удаляем голоса за этого игрока
+    if str(user_id_to_remove) in game["votes"]:
+        del game["votes"][str(user_id_to_remove)]
+    
+    # Если был хамелеоном - удаляем игру полностью
+    if game["chameleon_id"] == user_id_to_remove:
+        delete_game(chat_id)
+        user_name = users[str(user_id_to_remove)].get("first_name", users[str(user_id_to_remove)].get("username", f"User {user_id_to_remove}"))
+        await update.message.reply_text(f"✅ {user_name} был хамелеоном. Игра остановлена.")
+        return
+    
+    # Сохраняем изменения
+    games = load_games()
+    games[str(chat_id)] = game
+    save_games(games)
+    
+    user_name = users[str(user_id_to_remove)].get("first_name", users[str(user_id_to_remove)].get("username", f"User {user_id_to_remove}"))
+    await update.message.reply_text(f"✅ {user_name} исключен из игры")
 
 
 async def stopgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -573,9 +606,9 @@ async def setup_commands(app):
         BotCommand("newgame", "Начать новую игру"),
         BotCommand("cnewgame", "Начать игру (коротко)"),
         BotCommand("stopgame", "Остановить игру"),
+        BotCommand("kick", "Исключить игрока из игры"),
         BotCommand("scores", "Таблица лидеров"),
         BotCommand("players", "Список игроков"),
-        BotCommand("remove", "Удалить игрока"),
     ]
     try:
         await app.bot.set_my_commands(commands)
@@ -596,7 +629,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("scores", scores))
     app.add_handler(CommandHandler("players", players))
-    app.add_handler(CommandHandler("remove", remove_user))
+    app.add_handler(CommandHandler("kick", kick_user))
     app.add_handler(CommandHandler("stopgame", stopgame))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("cnewgame", newgame))
